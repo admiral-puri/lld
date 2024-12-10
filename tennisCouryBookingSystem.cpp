@@ -160,21 +160,21 @@ public:
     }
 };
 
-// Booking Class
-class Booking {
-    std::shared_ptr<Court> court;
-    std::vector<std::shared_ptr<RentalItem>> rentalItems;
-public:
-    Booking(std::shared_ptr<Court> court) : court(court) {}
+// // Booking Class
+// class Booking {
+//     std::shared_ptr<Court> court;
+//     std::vector<std::shared_ptr<RentalItem>> rentalItems;
+// public:
+//     Booking(std::shared_ptr<Court> court) : court(court) {}
 
-    void addRentalItem(std::shared_ptr<RentalItem> item) {
-        rentalItems.push_back(item);
-    }
+//     void addRentalItem(std::shared_ptr<RentalItem> item) {
+//         rentalItems.push_back(item);
+//     }
 
-    int calculateTotal() const {
-        return PricingStrategy::calculateTotal(court, rentalItems);
-    }
-};
+//     int calculateTotal() const {
+//         return PricingStrategy::calculateTotal(court, rentalItems);
+//     }
+// };
 
 // Booking Validator
 class BookingValidator {
@@ -215,6 +215,7 @@ public:
     }
 };
 
+
 // Inventory Service
 class InventoryService {
     CourtInventory inventory;
@@ -228,6 +229,60 @@ public:
     }
 };
 
+// Discount Strategy Interface
+class DiscountStrategy {
+public:
+    virtual int applyDiscount(int total) const = 0;
+    virtual ~DiscountStrategy() = default;
+};
+
+class NoDiscount : public DiscountStrategy {
+public:
+    int applyDiscount(int total) const override {
+        return total;  // No discount
+    }
+};
+
+class PercentageDiscount : public DiscountStrategy {
+    int percentage;
+public:
+    PercentageDiscount(int percentage) : percentage(percentage) {}
+    int applyDiscount(int total) const override {
+        return total - (total * percentage / 100);
+    }
+};
+
+// Updated Booking Class
+class Booking {
+    std::shared_ptr<Court> court;
+    std::vector<std::shared_ptr<RentalItem>> rentalItems;
+    std::shared_ptr<DiscountStrategy> discountStrategy;
+
+public:
+    Booking(std::shared_ptr<Court> court, std::shared_ptr<DiscountStrategy> discount = std::make_shared<NoDiscount>())
+        : court(court), discountStrategy(discount) {}
+
+    void addRentalItem(std::shared_ptr<RentalItem> item) {
+        rentalItems.push_back(item);
+    }
+
+    int calculateTotal() const {
+        int total = PricingStrategy::calculateTotal(court, rentalItems);
+        return discountStrategy->applyDiscount(total);
+    }
+};
+
+class Logger {
+public:
+    static void logInfo(const std::string& message) {
+        std::cout << "[INFO] " << message << "\n";
+    }
+
+    static void logError(const std::string& message) {
+        std::cerr << "[ERROR] " << message << "\n";
+    }
+};
+
 // Booking Manager
 class BookingManager {
     InventoryService inventoryService;
@@ -235,21 +290,32 @@ class BookingManager {
     PaymentService paymentService;
 
 public:
-    void bookCourt(const std::string& courtType, const std::vector<std::string>& rentalTypes, const std::string& paymentMethod) {
-        BookingValidator::validateCourtType(courtType);
-        BookingValidator::validatePaymentMethod(paymentMethod);
-
-        if (!inventoryService.checkAvailability(courtType)) {
-            throw std::runtime_error("Selected court type is unavailable");
+void bookCourt(const std::string& courtType, const std::vector<std::string>& rentalTypes, const std::string& paymentMethod) {
+    try {
+            Logger::logInfo("Starting booking process.");
+            BookingValidator::validateCourtType(courtType);
+            BookingValidator::validatePaymentMethod(paymentMethod);
+            
+            if (!inventoryService.checkAvailability(courtType)) {
+                throw std::runtime_error("Selected court type is unavailable");
+            }
+            
+            auto discountStrategy = std::make_shared<PercentageDiscount>(10);  // 10% discount
+            Booking booking = bookingService.createBooking(courtType, rentalTypes);
+            booking.applyDiscountStrategy(discountStrategy);
+            
+            int total = booking.calculateTotal();
+            
+            std::cout << "Total Price after discount: ₹" << total << "\n";
+            paymentService.processPayment(paymentMethod, total);
+            inventoryService.reserveCourt(courtType);
+            
+            Logger::logInfo("Booking completed successfully.");
+        } catch (const std::exception& e) {
+            Logger::logError(e.what());
+            throw;
         }
-
-        Booking booking = bookingService.createBooking(courtType, rentalTypes);
-        int total = booking.calculateTotal();
-
-        std::cout << "Total Price: ₹" << total << "\n";
-        paymentService.processPayment(paymentMethod, total);
-        inventoryService.reserveCourt(courtType);
-    }
+    }    
 };
 
 // Main Function
